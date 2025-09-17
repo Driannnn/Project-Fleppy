@@ -1,0 +1,6 @@
+<svg width="128" height="128" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- bentuk daun -->
+  <path d="M20 4c-6 0-10 2-12.5 4.5C5 11 4 14 4 16.5A3.5 3.5 0 0 0 7.5 20C10 20 13 19 15.5 16.5C18 14 20 10 20 4Z" fill="#4CAF50"/>
+  <!-- tulang daun -->
+  <path d="M4 16.5c6-1 10-5.5 16-12.5" stroke="#2E7D32" stroke-width="1.5" fill="none"/>
+</svg>
