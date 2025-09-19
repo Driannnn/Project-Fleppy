@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../models/game_config.dart';
 import 'edit_challenge_page.dart';
+import '../services/challenge_storage.dart';
 
 class ChallengeSettingsPage extends StatefulWidget {
   final List<GameConfig> initial;
@@ -13,12 +14,26 @@ class ChallengeSettingsPage extends StatefulWidget {
 
 class _ChallengeSettingsPageState extends State<ChallengeSettingsPage> {
   late List<GameConfig> _items;
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _items = List<GameConfig>.from(widget.initial);
+    _init();
   }
+
+  Future<void> _init() async {
+    // pakai initial dulu; kalau kosong, coba load dari local
+    final fromInitial = List<GameConfig>.from(widget.initial);
+    if (fromInitial.isNotEmpty) {
+      _items = fromInitial;
+    } else {
+      _items = await ChallengeStorage.load();
+    }
+    setState(() => _loading = false);
+  }
+
+  Future<void> _persist() => ChallengeStorage.save(_items);
 
   Future<void> _add() async {
     final result = await Navigator.of(context).push<GameConfig>(
@@ -26,6 +41,7 @@ class _ChallengeSettingsPageState extends State<ChallengeSettingsPage> {
     );
     if (result != null && mounted) {
       setState(() => _items.add(result));
+      await _persist();
     }
   }
 
@@ -37,14 +53,18 @@ class _ChallengeSettingsPageState extends State<ChallengeSettingsPage> {
     );
     if (result != null && mounted) {
       setState(() => _items[index] = result);
+      await _persist();
     }
   }
 
-  void _delete(int index) {
+  Future<void> _delete(int index) async {
     setState(() => _items.removeAt(index));
+    await _persist();
   }
 
-  void _saveAndBack() {
+  Future<void> _saveAndBack() async {
+    await _persist();
+    if (!mounted) return;
     Navigator.of(context).pop<List<GameConfig>>(_items);
   }
 
@@ -52,9 +72,9 @@ class _ChallengeSettingsPageState extends State<ChallengeSettingsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
-      backgroundColor: Colors.transparent,
+      backgroundColor: const Color.fromARGB(0, 255, 255, 255),
       appBar: AppBar(
-        title: const Text("Kelola Tantangan"),
+        title: const Text("Kelola Tantangan", style: TextStyle(color: Colors.white)),
         backgroundColor: const Color.fromARGB(
           255,
           255,
@@ -78,77 +98,96 @@ class _ChallengeSettingsPageState extends State<ChallengeSettingsPage> {
           ),
         ),
         child: SafeArea(
-          child: ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: _items.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, i) {
-              final c = _items[i];
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                  child: InkWell(
-                    onTap: () => _edit(i),
-                    borderRadius: BorderRadius.circular(16),
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white30, width: 1.2),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 44,
-                            height: 44,
+          child: _loading
+              ? const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                )
+              : _items.isEmpty
+              ? const Center(
+                  child: Text(
+                    'Belum ada tantangan.\nTekan tombol + untuk menambah.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _items.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, i) {
+                    final c = _items[i];
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                        child: InkWell(
+                          onTap: () => _edit(i),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.18),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white30),
+                              color: Colors.white.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: Colors.white30,
+                                width: 1.2,
+                              ),
                             ),
-                            child: const Icon(Icons.flag, color: Colors.white),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: Row(
                               children: [
-                                Text(
-                                  c.name,
-                                  style: const TextStyle(
+                                Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.18),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white30),
+                                  ),
+                                  child: const Icon(
+                                    Icons.flag,
                                     color: Colors.white,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 16,
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  c.description,
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 13,
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        c.name,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        c.description,
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
                                   ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: Color.fromARGB(255, 255, 255, 255),
+                                  ),
+                                  onPressed: () => _delete(i),
                                 ),
                               ],
                             ),
                           ),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.delete,
-                              color: Colors.redAccent,
-                            ),
-                            onPressed: () => _delete(i),
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(

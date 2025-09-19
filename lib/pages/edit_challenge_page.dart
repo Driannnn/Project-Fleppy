@@ -44,7 +44,7 @@ class _EditChallengePageState extends State<EditChallengePage> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(isEdit ? "Edit Tantangan" : "Tambah Tantangan"),
+        title: Text(isEdit ? "Edit Tantangan" : "Tambah Tantangan", style: TextStyle(color: Colors.white)),
         backgroundColor: const Color.fromARGB(
           255,
           255,

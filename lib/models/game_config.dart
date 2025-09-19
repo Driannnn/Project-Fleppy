@@ -14,29 +14,37 @@ class GameConfig {
     required this.pipeSpeed,
   });
 
-  @override
-  String toString() =>
-      'GameConfig(name: $name, gap: $pipeGapH, speed: $pipeSpeed)';
+  Map<String, dynamic> toMap() {
+    return {
+      'kind': 'base',
+      'name': name,
+      'description': description,
+      'pipeGapH': pipeGapH,
+      'pipeSpeed': pipeSpeed,
+    };
+  }
 
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is GameConfig &&
-          runtimeType == other.runtimeType &&
-          name == other.name &&
-          description == other.description &&
-          pipeGapH == other.pipeGapH &&
-          pipeSpeed == other.pipeSpeed;
+  factory GameConfig.fromMap(Map<String, dynamic> map) {
+    return GameConfig(
+      name: map['name'],
+      description: map['description'],
+      pipeGapH: (map['pipeGapH'] as num).toDouble(),
+      pipeSpeed: (map['pipeSpeed'] as num).toDouble(),
+    );
+  }
 
-  @override
-  int get hashCode =>
-      name.hashCode ^
-      description.hashCode ^
-      pipeGapH.hashCode ^
-      pipeSpeed.hashCode;
+  /// Helper: otomatis pilih turunan kalau field tambahan ada
+  static GameConfig fromAny(Map<String, dynamic> map) {
+    final kind = map['kind'];
+    final hasAdvancedFields = map.containsKey('themeColor') || map.containsKey('iconPath');
+    if (kind == 'advanced' || hasAdvancedFields) {
+      return AdvancedGameConfig.fromMap(map);
+    }
+    return GameConfig.fromMap(map);
+  }
 }
 
-/// Model turunan dengan tambahan properti
+/// Model turunan: punya warna tema + icon (SVG / PNG)
 class AdvancedGameConfig extends GameConfig {
   final Color themeColor;
   final String iconPath;
@@ -50,21 +58,25 @@ class AdvancedGameConfig extends GameConfig {
     required this.iconPath,
   });
 
-
   @override
-  String toString() =>
-      'AdvancedGameConfig(name: $name, gap: $pipeGapH, speed: $pipeSpeed, '
-      'themeColor: $themeColor, iconPath: $iconPath)';
+  Map<String, dynamic> toMap() {
+    final base = super.toMap();
+    return {
+      ...base,
+      'kind': 'advanced',
+      'themeColor': themeColor.value,
+      'iconPath': iconPath,
+    };
+  }
 
-  
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is AdvancedGameConfig &&
-          super == other && // panggil equality dari GameConfig
-          themeColor == other.themeColor &&
-          iconPath == other.iconPath;
-
-  @override
-  int get hashCode => super.hashCode ^ themeColor.hashCode ^ iconPath.hashCode;
+  factory AdvancedGameConfig.fromMap(Map<String, dynamic> map) {
+    return AdvancedGameConfig(
+      name: map['name'],
+      description: map['description'],
+      pipeGapH: (map['pipeGapH'] as num).toDouble(),
+      pipeSpeed: (map['pipeSpeed'] as num).toDouble(),
+      themeColor: Color(map['themeColor'] ?? 0xFFFFFFFF),
+      iconPath: map['iconPath'] ?? 'assets/bird.svg',
+    );
+  }
 }

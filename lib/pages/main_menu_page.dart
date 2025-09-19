@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../services/local_auth.dart';
+import '../services/challenge_storage.dart';
+import '../models/game_config.dart';
 import 'game_page.dart';
 import 'login_page.dart';
-import '../models/game_config.dart';
 import 'challenge_settings_page.dart';
 
 class MainMenuPage extends StatefulWidget {
@@ -20,74 +21,41 @@ class _MainMenuPageState extends State<MainMenuPage> {
   String? _email;
   Timer? _minuteTicker;
 
-  // === Private state challenges
-  List<GameConfig> _challenges = const [
-    GameConfig(
-      name: 'Easy Breeze',
-      description: 'Gap lebih lebar, pipa agak lambat.',
-      pipeGapH: 200,
-      pipeSpeed: 2.6,
-    ),
-    GameConfig(
-      name: 'Hardcore',
-      description: 'Gap sempit dan pipa cepat.',
-      pipeGapH: 150,
-      pipeSpeed: 3.6,
-    ),
-    AdvancedGameConfig(
-      name: 'Daun',
-      description: 'Gampang.',
-      pipeGapH: 180,
-      pipeSpeed: 2.2,
-      themeColor: Color.fromARGB(255, 255, 0, 0),
-      iconPath: 'assets/leaf.svg',
-    ),
-    AdvancedGameConfig(
-      name: 'Apiii',
-      description: 'Susah.',
-      pipeGapH: 180,
-      pipeSpeed: 3.2,
-      themeColor: Color.fromARGB(255, 255, 0, 0),
-      iconPath: 'assets/fire.svg',
-    ),
-  ];
+  List<GameConfig> _challenges = [];
+  bool _loadingChallenges = true;
 
+  // === Getter–Setter (auto simpan ke storage)
   List<GameConfig> get challenges => List.unmodifiable(_challenges);
   set challenges(List<GameConfig> value) {
     setState(() => _challenges = List<GameConfig>.from(value));
+    ChallengeStorage.save(_challenges);
   }
 
   void addChallenge(GameConfig cfg) {
     setState(() => _challenges = [..._challenges, cfg]);
+    ChallengeStorage.save(_challenges);
   }
 
   void removeChallengeAt(int index) {
     if (index < 0 || index >= _challenges.length) return;
-    setState(() {
-      final copy = [..._challenges];
-      copy.removeAt(index);
-      _challenges = copy;
-    });
-  }
-
-  Future<void> _openChallengeSettings() async {
-    final result = await Navigator.of(context).push<List<GameConfig>>(
-      MaterialPageRoute(
-        builder: (_) => ChallengeSettingsPage(initial: challenges),
-      ),
-    );
-    if (result != null && mounted) {
-      challenges = result;
-    }
+    final copy = [..._challenges]..removeAt(index);
+    challenges = copy;
   }
 
   @override
   void initState() {
     super.initState();
     _loadUser();
+    _loadChallenges();
     _minuteTicker = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
     });
+  }
+
+  @override
+  void dispose() {
+    _minuteTicker?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadUser() async {
@@ -102,10 +70,73 @@ class _MainMenuPageState extends State<MainMenuPage> {
     }
   }
 
-  @override
-  void dispose() {
-    _minuteTicker?.cancel();
-    super.dispose();
+  Future<void> _loadChallenges() async {
+    setState(() => _loadingChallenges = true);
+    final saved = await ChallengeStorage.load();
+    if (saved.isNotEmpty) {
+      challenges = saved;
+      setState(() => _loadingChallenges = false);
+      return;
+    }
+
+    // DEFAULT (termasuk 1 AdvancedGameConfig sebagai contoh)
+    final defaults = <GameConfig>[
+      const GameConfig(
+        name: 'Easy Breeze',
+        description: 'Gap lebih lebar, pipa agak lambat.',
+        pipeGapH: 200,
+        pipeSpeed: 2.6,
+      ),
+      AdvancedGameConfig(
+        name: 'Hardcore+',
+        description: 'Tema merah, ikon khusus, lebih garang.',
+        pipeGapH: 145,
+        pipeSpeed: 3.8,
+        themeColor: const Color(0xFFE53935), // merah
+        iconPath: 'assets/bird.svg', // pakai aset burung
+      ),
+      const GameConfig(
+        name: 'Insane',
+        description: 'Untuk pro! Jangan nangis ya 😅',
+        pipeGapH: 135,
+        pipeSpeed: 4.0,
+      ),
+    ];
+    await ChallengeStorage.save(defaults);
+    if (!mounted) return;
+    challenges = defaults;
+    setState(() => _loadingChallenges = false);
+  }
+
+  Future<void> _logout() async {
+    await LocalAuth.instance.logout();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+      (r) => false,
+    );
+  }
+
+  void _play() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const GamePage()))
+        .then((_) => _loadChallenges());
+  }
+
+  void _playWithConfig(GameConfig c) {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => GamePage(config: c)))
+        .then((_) => _loadChallenges());
+  }
+
+  Future<void> _openChallengeSettings() async {
+    final result = await Navigator.of(context).push<List<GameConfig>>(
+      MaterialPageRoute(
+        builder: (_) => ChallengeSettingsPage(initial: _challenges),
+      ),
+    );
+    await _loadChallenges(); // reload dari storage
+    if (result != null && mounted) challenges = result;
   }
 
   String _greeting() {
@@ -120,31 +151,9 @@ class _MainMenuPageState extends State<MainMenuPage> {
     final email = _email ?? '';
     if (email.contains('@')) {
       final name = email.split('@').first;
-      if (name.isEmpty) return email;
-      return name[0].toUpperCase() + name.substring(1);
+      return name.isEmpty ? email : (name[0].toUpperCase() + name.substring(1));
     }
     return email;
-  }
-
-  Future<void> _logout() async {
-    await LocalAuth.instance.logout();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-      (r) => false,
-    );
-  }
-
-  void _play() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const GamePage()));
-  }
-
-  void _playWithConfig(GameConfig c) {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => GamePage(config: c)));
   }
 
   @override
@@ -165,7 +174,7 @@ class _MainMenuPageState extends State<MainMenuPage> {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
             children: [
-              // Logo
+              // Logo + judul (liquid glass)
               ClipRRect(
                 borderRadius: BorderRadius.circular(20),
                 child: BackdropFilter(
@@ -205,9 +214,10 @@ class _MainMenuPageState extends State<MainMenuPage> {
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white70, fontSize: 16),
               ),
+
               const SizedBox(height: 30),
 
-              // Tombol Play
+              // Play cepat
               SizedBox(
                 width: double.infinity,
                 height: 54,
@@ -228,9 +238,10 @@ class _MainMenuPageState extends State<MainMenuPage> {
                   ),
                 ),
               ),
+
               const SizedBox(height: 16),
 
-              // Tombol Logout
+              // Logout
               SizedBox(
                 width: double.infinity,
                 height: 50,
@@ -248,18 +259,23 @@ class _MainMenuPageState extends State<MainMenuPage> {
                 ),
               ),
 
-              // Tombol Kelola Tantangan
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
-                  style: TextButton.styleFrom(foregroundColor: Colors.white),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
                   onPressed: _openChallengeSettings,
                   icon: const Icon(Icons.tune_rounded),
                   label: const Text('Kelola Tantangan'),
                 ),
               ),
-              const SizedBox(height: 28),
 
+              const SizedBox(height: 8),
               const Text(
                 'Tantangan',
                 style: TextStyle(
@@ -270,119 +286,149 @@ class _MainMenuPageState extends State<MainMenuPage> {
               ),
               const SizedBox(height: 12),
 
-              // List tantangan expandable
-              ListView.separated(
-                physics: const NeverScrollableScrollPhysics(),
-                shrinkWrap: true,
-                itemCount: challenges.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                itemBuilder: (context, i) {
-                  final c = challenges[i];
-                  final isAdvanced = c is AdvancedGameConfig;
-                  return Theme(
-                    data: Theme.of(
-                      context,
-                    ).copyWith(dividerColor: Colors.transparent),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.14),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.white30, width: 1.2),
-                      ),
-                      child: ExpansionTile(
-                        tilePadding: const EdgeInsets.symmetric(horizontal: 14),
-                        collapsedIconColor: Colors.white70,
-                        iconColor: Colors.white,
-                        leading: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: isAdvanced
-                                ? (c as AdvancedGameConfig).themeColor
-                                      .withOpacity(0.25)
-                                : Colors.white.withOpacity(0.18),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white30),
+              if (_loadingChallenges)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 32),
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                )
+              else if (_challenges.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Text(
+                    'Belum ada tantangan.\nBuat dari menu "Kelola Tantangan".',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                )
+              else
+                // === LIST EXPANDABLE (ExpansionTile) — versi tanpa garis ===
+                ListView.separated(
+                  physics: const NeverScrollableScrollPhysics(),
+                  shrinkWrap: true,
+                  itemCount: challenges.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, i) {
+                    final c = challenges[i];
+
+                    //  Jika Advanced, gunakan warna & icon kustom
+                    Color chipColor = Colors.white.withOpacity(0.18);
+                    String? iconPath;
+                    if (c is AdvancedGameConfig) {
+                      chipColor = c.themeColor.withOpacity(0.25);
+                      iconPath = c.iconPath;
+                    }
+
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        child: Theme(
+                          data: Theme.of(context).copyWith(
+                            dividerColor: Colors
+                                .transparent, // ⬅️ hilangkan garis divider bawaan ExpansionTile
                           ),
-                          child: Center(
-                            child: isAdvanced
-                                ? SvgPicture.asset(
-                                    (c as AdvancedGameConfig).iconPath,
-                                    colorFilter: const ColorFilter.mode(
-                                      Colors.white,
-                                      BlendMode.srcIn,
-                                    ),
-                                    width: 22,
-                                    height: 22,
-                                  )
-                                : const Icon(
-                                    Icons.flag_rounded,
-                                    color: Colors.white,
+                          child: Container(
+                            // HILANGKAN border agar tidak ada garis frame
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.14),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: ExpansionTile(
+                              tilePadding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                              ),
+                              collapsedIconColor: Colors.white70,
+                              iconColor: Colors.white,
+                              leading: Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.18),
+                                  shape: BoxShape.circle,
+                                  // HAPUS border: Border.all(...),
+                                ),
+                                child: iconPath != null && iconPath.endsWith('.svg')
+                              ? Padding(
+                                  padding: const EdgeInsets.all(8.0),
+                                  child: SvgPicture.asset(
+                                    iconPath,
+                                    fit: BoxFit.contain,
                                   ),
-                          ),
-                        ),
-                        title: Text(
-                          c.name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
-                          ),
-                        ),
-                        subtitle: Text(
-                          c.description,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 13,
-                          ),
-                        ),
-                        childrenPadding: const EdgeInsets.fromLTRB(
-                          14,
-                          0,
-                          14,
-                          14,
-                        ),
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _glassStat(
-                                  label: 'Gap',
-                                  value: '${c.pipeGapH.toStringAsFixed(0)} px',
+                                )
+                              : const Icon(
+                                  Icons.flag_rounded,
+                                  color: Colors.white,
                                 ),
                               ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _glassStat(
-                                  label: 'Speed',
-                                  value:
-                                      '${c.pipeSpeed.toStringAsFixed(1)} px/tick',
+                              title: Text(
+                                c.name,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 44,
-                            child: FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: Colors.white.withOpacity(0.22),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                              subtitle: Text(
+                                c.description,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 13,
                                 ),
                               ),
-                              onPressed: () => _playWithConfig(c),
-                              icon: const Icon(Icons.play_arrow_rounded),
-                              label: const Text('Mainkan tantangan ini'),
+                              childrenPadding: const EdgeInsets.fromLTRB(
+                                14,
+                                0,
+                                14,
+                                14,
+                              ),
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _glassStat(
+                                        label: 'Gap',
+                                        value:
+                                            '${c.pipeGapH.toStringAsFixed(0)} px',
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: _glassStat(
+                                        label: 'Speed',
+                                        value:
+                                            '${c.pipeSpeed.toStringAsFixed(1)} px/tick',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  height: 44,
+                                  child: FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.white.withOpacity(
+                                        0.22,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    onPressed: () => _playWithConfig(c),
+                                    icon: const Icon(Icons.play_arrow_rounded),
+                                    label: const Text('Mainkan tantangan ini'),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
+                    );
+                  },
+                ),
             ],
           ),
         ),
