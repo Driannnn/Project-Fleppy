@@ -113,7 +113,7 @@ class _SplashPageState extends State<SplashPage>
                         ),
                         const SizedBox(height: 16),
                         const Text(
-                          'Fleppy',
+                          'Fleppy by Ello',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 34,
